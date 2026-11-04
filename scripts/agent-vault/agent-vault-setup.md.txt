@@ -1,0 +1,216 @@
+# Infisical: manual self-hosted setup
+This guide describes how a human operator can install and run the repository's
+Docker Compose deployment on one Linux server (or Docker Desktop on macOS/Windows).
+It is intended for a proof of concept, development environment, or small
+single-host deployment. The repository explicitly says this Compose deployment
+is **not** a high-availability production architecture; use the Kubernetes
+deployment for HA.
+The commands below assume a Linux server and a shell. Replace
+`https://infisical.example.com` with the real public URL if using a domain.
+## 1. Confirm the deployment scope and server capacity
+Use a server with at least:
+| Resource | Minimum | Recommended |
+|---|---:|---:|
+| CPU | 2 cores | 4 cores |
+| RAM | 4 GB | 8 GB |
+| Disk | 20 GB | 50 GB+ SSD |
+This Compose stack runs Infisical, PostgreSQL, and Redis on one Docker host.
+It is not designed for high availability. Do not use it as a substitute for
+the Kubernetes/HA architecture when losing one host is unacceptable.
+**Source:** [`docs/self-hosting/deployment-options/docker-compose.mdx`](https://github.com/Infisical/infisical/blob/main/docs/self-hosting/deployment-options/docker-compose.mdx#L25-L47)
+## 2. Install and verify Docker
+Install Docker Engine and the Docker Compose plugin using Docker's official
+instructions for the server operating system. Then verify both commands:
+```bash
+docker --version
+docker compose version
+```
+The repository documents Docker Engine 20.10+ and Docker Compose 2.0+ as the
+baseline.
+**Source:** [`docs/self-hosting/deployment-options/docker-compose.mdx`](https://github.com/Infisical/infisical/blob/main/docs/self-hosting/deployment-options/docker-compose.mdx#L25-L30), [Docker Engine installation](https://docs.docker.com/engine/install/), [Docker Compose installation](https://docs.docker.com/compose/install/)
+## 3. Create a protected deployment directory
+Create a directory that will contain the Compose file and secrets:
+```bash
+sudo mkdir -p /opt/infisical
+sudo chown "$USER":"$USER" /opt/infisical
+cd /opt/infisical
+umask 077
+```
+Do not place `.env` in a public Git repository or make it readable by
+untrusted users.
+**Source:** [`docs/self-hosting/deployment-options/docker-compose.mdx`](https://github.com/Infisical/infisical/blob/main/docs/self-hosting/deployment-options/docker-compose.mdx#L101-L106)
+## 4. Download the exact deployment files
+Download the Compose definition and environment template from the repository:
+```bash
+curl -fL -o docker-compose.prod.yml \
+  https://raw.githubusercontent.com/Infisical/infisical/main/docker-compose.prod.yml
+curl -fL -o .env \
+  https://raw.githubusercontent.com/Infisical/infisical/main/.env.example
+chmod 600 .env
+```
+Alternatively, clone the repository and copy `.env.example` to `.env`:
+```bash
+git clone https://github.com/Infisical/infisical.git
+cd infisical
+cp .env.example .env
+chmod 600 .env
+```
+**Source:** [`docs/self-hosting/deployment-options/docker-compose.mdx`](https://github.com/Infisical/infisical/blob/main/docs/self-hosting/deployment-options/docker-compose.mdx#L66-L106), [`README.md`](https://github.com/Infisical/infisical/blob/main/README.md#L132-L146)
+## 5. Generate unique production secrets
+The checked-in `.env.example` contains sample values. Replace them before
+starting the instance; never use the samples for a real deployment:
+```bash
+encryption_key="$(openssl rand -hex 16)"
+auth_secret="$(openssl rand -base64 32)"
+sed -i "s|^ENCRYPTION_KEY=.*|ENCRYPTION_KEY=${encryption_key}|" .env
+sed -i "s|^AUTH_SECRET=.*|AUTH_SECRET=${auth_secret}|" .env
+```
+Keep these values backed up securely. Losing `ENCRYPTION_KEY` can make encrypted
+data unrecoverable. Do not rotate it casually; use the repository's dedicated
+encryption-key rotation procedure.
+**Source:** [`docs/self-hosting/configuration/envars.mdx`](https://github.com/Infisical/infisical/blob/main/docs/self-hosting/configuration/envars.mdx#L7-L27), [`docs/self-hosting/guides/production-hardening.mdx`](https://github.com/Infisical/infisical/blob/main/docs/self-hosting/guides/production-hardening.mdx#L16-L26), [`.env.example`](https://github.com/Infisical/infisical/blob/main/.env.example#L1-L9)
+## 6. Set the database, Redis, and site URL values
+Edit `.env` and set values appropriate for this host:
+```dotenv
+POSTGRES_PASSWORD=use-a-long-unique-database-password
+POSTGRES_USER=infisical
+POSTGRES_DB=infisical
+DB_CONNECTION_URI=postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
+REDIS_URL=redis://redis:6379
+SITE_URL=https://infisical.example.com
+```
+For a local-only test, `SITE_URL=http://localhost:8080` is suitable. For a
+domain deployment, it must be an absolute URL including the protocol and must
+match the URL users actually open.
+The Compose file supplies `.env` to all services, maps the application from
+host port `80` to container port `8080`, and persists PostgreSQL and Redis in
+named volumes. Do not change the database hostname from `db` or Redis hostname
+from `redis` while using this Compose file.
+**Source:** [`.env.example`](https://github.com/Infisical/infisical/blob/main/.env.example#L11-L24), [`docs/self-hosting/configuration/envars.mdx`](https://github.com/Infisical/infisical/blob/main/docs/self-hosting/configuration/envars.mdx#L37-L40), [`docker-compose.prod.yml`](https://github.com/Infisical/infisical/blob/main/docker-compose.prod.yml#L12-L18), [`docker-compose.prod.yml`](https://github.com/Infisical/infisical/blob/main/docker-compose.prod.yml#L34-L53)
+## 7. Configure email before inviting users
+If the instance must send invitations, password resets, or notifications, add
+the SMTP settings to `.env`:
+```dotenv
+SMTP_HOST=smtp.example.com
+SMTP_PORT=587
+SMTP_USERNAME=your-smtp-user
+SMTP_PASSWORD=your-smtp-password
+SMTP_FROM_ADDRESS=noreply@example.com
+SMTP_FROM_NAME=Infisical
+```
+Use the SMTP provider's TLS requirements and credentials. Restart the backend
+after changing `.env`.
+**Source:** [`docs/self-hosting/deployment-options/docker-compose.mdx`](https://github.com/Infisical/infisical/blob/main/docs/self-hosting/deployment-options/docker-compose.mdx#L292-L338), [`.env.example`](https://github.com/Infisical/infisical/blob/main/.env.example#L26-L32)
+## 8. Restrict the host firewall
+Expose only the web entry point. PostgreSQL (`5432`) and Redis (`6379`) should
+remain internal to the Docker network and are not published by the supplied
+Compose file.
+For Ubuntu/Debian with UFW:
+```bash
+sudo ufw allow 80/tcp
+sudo ufw allow 443/tcp
+sudo ufw deny 5432/tcp
+sudo ufw deny 6379/tcp
+sudo ufw enable
+```
+If HTTPS is terminated by a reverse proxy, expose `443` publicly and keep the
+application's internal services private.
+**Source:** [`docs/self-hosting/deployment-options/docker-compose.mdx`](https://github.com/Infisical/infisical/blob/main/docs/self-hosting/deployment-options/docker-compose.mdx#L266-L291), [`docs/self-hosting/guides/production-hardening.mdx`](https://github.com/Infisical/infisical/blob/main/docs/self-hosting/guides/production-hardening.mdx#L128-L133)
+## 9. Start the services
+Pull images and start the stack in the background:
+```bash
+docker compose -f docker-compose.prod.yml pull
+docker compose -f docker-compose.prod.yml up -d
+```
+The stack starts:
+- `backend`: Infisical application
+- `db`: PostgreSQL
+- `redis`: Redis
+The checked-in Compose file currently uses `infisical/infisical:latest`.
+For controlled operations, pin that image to a tested release tag instead of
+silently accepting a new image on every pull.
+**Source:** [`docs/self-hosting/deployment-options/docker-compose.mdx`](https://github.com/Infisical/infisical/blob/main/docs/self-hosting/deployment-options/docker-compose.mdx#L109-L120), [`docker-compose.prod.yml`](https://github.com/Infisical/infisical/blob/main/docker-compose.prod.yml#L3-L18)
+## 10. Verify the deployment and create the administrator
+Check service status:
+```bash
+docker compose -f docker-compose.prod.yml ps
+```
+All three services should be running. Check the application endpoint:
+```bash
+curl -fsS http://localhost/api/status
+```
+Open `SITE_URL` in a browser and create the first account. The first account
+becomes the instance administrator, so create it before giving other people
+access.
+If a service is not healthy, inspect logs:
+```bash
+docker compose -f docker-compose.prod.yml logs --tail=100 backend
+docker compose -f docker-compose.prod.yml logs --tail=100 db
+docker compose -f docker-compose.prod.yml logs --tail=100 redis
+```
+**Source:** [`docs/self-hosting/deployment-options/docker-compose.mdx`](https://github.com/Infisical/infisical/blob/main/docs/self-hosting/deployment-options/docker-compose.mdx#L122-L140), [`docs/self-hosting/deployment-options/docker-compose.mdx`](https://github.com/Infisical/infisical/blob/main/docs/self-hosting/deployment-options/docker-compose.mdx#L240-L264)
+## 11. Put HTTPS in front of the instance
+For a public deployment, terminate TLS at NGINX, a cloud load balancer, or
+another trusted reverse proxy. Obtain a certificate for the domain, proxy
+requests to the backend, and set `SITE_URL` to the HTTPS URL. Do not expose
+PostgreSQL or Redis through the proxy.
+If the proxy forwards client IP headers, configure `TRUSTED_PROXY_CIDRS` with
+the proxy's CIDRs so clients cannot spoof forwarded addresses.
+**Source:** [`docs/self-hosting/deployment-options/docker-compose.mdx`](https://github.com/Infisical/infisical/blob/main/docs/self-hosting/deployment-options/docker-compose.mdx#L340-L380), [`docs/self-hosting/configuration/envars.mdx`](https://github.com/Infisical/infisical/blob/main/docs/self-hosting/configuration/envars.mdx#L46-L59)
+## 12. Back up the data and protect the encryption key
+The `pg_data` volume contains encrypted secrets, users, projects, and
+configuration. Never remove it casually. Create a PostgreSQL dump before
+maintenance or upgrades:
+```bash
+mkdir -p /opt/infisical/backups
+docker compose -f docker-compose.prod.yml exec -T db \
+  pg_dump -U infisical infisical \
+  > "/opt/infisical/backups/infisical_$(date +%Y%m%d_%H%M%S).sql"
+chmod 600 /opt/infisical/backups/*.sql
+```
+Store the dump and the deployment's encryption key in a separate, access-
+controlled backup system. Test restoration periodically. Redis also contains
+background-job and coordination state, so production operators should include
+Redis persistence in their backup and recovery design.
+**Source:** [`docs/self-hosting/deployment-options/docker-compose.mdx`](https://github.com/Infisical/infisical/blob/main/docs/self-hosting/deployment-options/docker-compose.mdx#L224-L239), [`docs/self-hosting/configuration/requirements.mdx`](https://github.com/Infisical/infisical/blob/main/docs/self-hosting/configuration/requirements.mdx#L42-L60)
+## 13. Stop, restart, and update safely
+Common operations:
+```bash
+# Stop containers without deleting named volumes
+docker compose -f docker-compose.prod.yml down
+# Start them again
+docker compose -f docker-compose.prod.yml up -d
+# Restart after an .env change
+docker compose -f docker-compose.prod.yml restart backend
+```
+Before upgrading:
+1. Make and verify a database backup.
+2. Read the release notes between the current and target versions.
+3. Pin the Compose image to the target release tag.
+4. Pull and start the new image.
+5. Review logs and test login, secret read/write, and integrations.
+Infisical runs database migrations during application startup. Do not delete
+the database volume or attempt a downgrade against a database migrated by a
+newer application version.
+**Source:** [`docs/self-hosting/deployment-options/docker-compose.mdx`](https://github.com/Infisical/infisical/blob/main/docs/self-hosting/deployment-options/docker-compose.mdx#L240-L264), [`docs/self-hosting/guides/upgrading-infisical.mdx`](https://github.com/Infisical/infisical/blob/main/docs/self-hosting/guides/upgrading-infisical.mdx#L15-L67), [`docker-compose.prod.yml`](https://github.com/Infisical/infisical/blob/main/docker-compose.prod.yml#L12-L13)
+## 14. Production hardening checklist
+- Replace every sample secret in `.env`.
+- Keep `.env`, backups, and encryption keys access-controlled.
+- Use HTTPS and set an accurate `SITE_URL`.
+- Keep PostgreSQL and Redis off the public network.
+- Keep `ALLOW_INTERNAL_IP_CONNECTIONS=false` unless a narrowly justified
+  integration requires otherwise; prefer an Infisical Gateway for private
+  resources.
+- Consider disabling telemetry with `TELEMETRY_ENABLED=false` if required by
+  policy.
+- Review the Admin Console's signup setting after creating the first admin.
+- Pin image versions and maintain a tested backup/restore procedure.
+**Source:** [`docs/self-hosting/guides/production-hardening.mdx`](https://github.com/Infisical/infisical/blob/main/docs/self-hosting/guides/production-hardening.mdx#L16-L26), [`docs/self-hosting/guides/production-hardening.mdx`](https://github.com/Infisical/infisical/blob/main/docs/self-hosting/guides/production-hardening.mdx#L72-L144), [`docs/self-hosting/configuration/envars.mdx`](https://github.com/Infisical/infisical/blob/main/docs/self-hosting/configuration/envars.mdx#L61-L74)
+## Repository sources used
+- [Docker Compose deployment guide](https://github.com/Infisical/infisical/blob/main/docs/self-hosting/deployment-options/docker-compose.mdx)
+- [Self-hosted environment variables](https://github.com/Infisical/infisical/blob/main/docs/self-hosting/configuration/envars.mdx)
+- [Production hardening](https://github.com/Infisical/infisical/blob/main/docs/self-hosting/guides/production-hardening.mdx)
+- [Upgrade guide](https://github.com/Infisical/infisical/blob/main/docs/self-hosting/guides/upgrading-infisical.mdx)
+- [Compose definition](https://github.com/Infisical/infisical/blob/main/docker-compose.prod.yml)
+- [Environment template](https://github.com/Infisical/infisical/blob/main/.env.example)
+- [Repository README](https://github.com/Infisical/infisical/blob/main/README.md)
