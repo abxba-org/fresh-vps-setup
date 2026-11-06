@@ -1,25 +1,26 @@
 # Parallel Tools Installer Template
 
 ## Purpose
-This script is an example Bash template for future AI-assisted development. It demonstrates how to install multiple AI tools in parallel, handle installation failures, and verify executables after installation.
+This script is an example Bash template for future AI-assisted development. It demonstrates how to install multiple CLI tools in parallel, handle installation failures gracefully, and verify executables after installation.
 
 ## Intended Use
-- Use as a reference template for future AI agents.
-- Add, remove, or replace AI tools as needed.
-- Adapt installation URLs, binary names, and configuration for future requirements.
-- Preserve parallel execution, error handling, and verification logic.
-- Treat this as an example implementation, not a guaranteed production-ready installer.
+- Use as a reference template for future AI agents
+- Add, remove, or replace tools as needed
+- Adapt installation URLs, binary names, and configuration
+- Preserve parallel execution, error handling, and verification logic
+- Treat as an example implementation, not a guaranteed production-ready installer
 
 ## Features
-- Parallel AI tool installation.
-- Background process tracking.
-- Installation failure detection.
-- Configurable timeout.
-- Post-installation verification using `command -v`.
-- Aggregate installation and verification reporting.
+- Parallel tool installation using background processes
+- Background process tracking with PID management
+- Installation failure detection and aggregation
+- Configurable timeout per tool (default 5 minutes)
+- Post-installation verification using `command -v`
+- Aggregate installation and verification reporting
+- Shell modification opt-out via `NO_SHELL_MODIFY`
 
 ## Example Tools
-Herdr, Kilo CLI, Hermes Agent, and TTT.
+Herdr, Kilo CLI, Hermes Agent, and TTT (configured as examples - replace with your tools)
 
 ## Important
 The script below is provided as a reusable reference example. Future AI agents may modify or extend it when requested. Verify installer URLs, executable names, and compatibility before actual use.
@@ -104,3 +105,137 @@ for entry in "${!TOOLS[@]}"; do
 done
 echo "Verified ${ok:-0}/${#TOOLS[@]} tools."
 ```
+
+## Customization Guide
+
+### Adding Tools
+```bash
+declare -A TOOLS=(
+    ["existing"]="url"
+    ["new-tool"]="https://example.com/install.sh"  # Add here
+)
+declare -A BINARIES=(
+    ["existing"]="binary"
+    ["new-tool"]="new-tool"                         # And here
+)
+```
+
+### Overriding at Runtime
+```bash
+# Custom timeout
+TIMEOUT=600 ./installer.sh
+
+# Skip shell modifications for specific tools
+NO_SHELL_MODIFY="kilo hermes" ./installer.sh
+
+# Both
+TIMEOUT=600 NO_SHELL_MODIFY="kilo" ./installer.sh
+```
+
+### Installing from Different Sources
+```bash
+# APT package
+install_apt() {
+    local pkg="$1"
+    apt-get update && apt-get install -y "$pkg"
+}
+
+# GitHub release binary
+install_gh_release() {
+    local repo="$1" binary="$2" version="$3"
+    local url="https://github.com/$repo/releases/download/v$version/${binary}_${version}_linux_amd64.tar.gz"
+    curl -fsSL "$url" | tar -xz -C /usr/local/bin "$binary"
+}
+
+# Custom installer script
+install_custom() {
+    local name="$1" url="$2"
+    curl -fsSL "$url" | bash -s -- --some-flag
+}
+```
+
+## Error Handling Patterns
+
+### Retry Logic
+```bash
+install_with_retry() {
+    local name="$1" url="$2" max_attempts=3 attempt=1
+    while [ $attempt -le $max_attempts ]; do
+        if curl -fsSL "$url" | timeout "$TIMEOUT" bash -; then
+            return 0
+        fi
+        echo "Attempt $attempt failed for $name, retrying..."
+        ((attempt++))
+        sleep 5
+    done
+    return 1
+}
+```
+
+### Partial Failure Handling
+```bash
+# Continue on failure, collect results
+results=()
+for tool in "${!TOOLS[@]}"; do
+    if install_tool "$tool"; then
+        results+=("$tool:success")
+    else
+        results+=("$tool:failed")
+    fi
+done
+
+# Report
+for result in "${results[@]}"; do
+    echo "$result"
+done
+```
+
+## Verification Strategies
+
+### Basic (command -v)
+```bash
+command -v "$binary" >/dev/null 2>&1
+```
+
+### Version Check
+```bash
+$binary --version 2>&1 | head -1
+```
+
+### Functional Test
+```bash
+# For tools with health checks
+$binary doctor 2>&1 | grep -q "OK"
+```
+
+### Path Verification
+```bash
+# Ensure in expected location
+[[ "$(command -v "$binary")" == "/usr/local/bin/$binary" ]]
+```
+
+## Integration with Main Scripts
+
+This pattern is used in [[scripts/tools/setup.sh]] for installing:
+- Container tools (Docker, kubectl, helm, etc.)
+- Infrastructure tools (Terraform, Packer, Ansible)
+- Cloud CLIs (AWS, GCP, Azure)
+- Utilities (bat, eza, rg, fd, etc.)
+- Version managers (asdf, fnm, pyenv)
+
+## Best Practices
+
+1. **Always verify URLs** before adding to TOOLS array
+2. **Pin versions** where possible for reproducibility
+3. **Test in clean environment** before committing
+4. **Handle interactive prompts** - use `--yes`, `-y`, or `DEBIAN_FRONTEND=noninteractive`
+5. **Clean up on failure** - trap EXIT for temp files
+6. **Log extensively** - use consistent log levels (INFO/WARN/ERROR)
+7. **Respect NO_SHELL_MODIFY** - some tools modify .bashrc/.zshrc
+
+## Related Documentation
+
+- [[README.md]] - Project overview
+- [[AGENT.md]] - Agent cross-references
+- [[templates/README.md]] - Template library index
+- [[scripts/tools/README.md]] - Tools module using this pattern
