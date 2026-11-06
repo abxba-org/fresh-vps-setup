@@ -108,6 +108,22 @@ log_success() { printf '\033[1;32m[OK]\033[0m %s\n' "$*"; }
 # --- Helpers ---
 has_command() { command -v "$1" >/dev/null 2>&1; }
 
+# curl with retry — transient upstream errors (502/503/429) fail whole runs otherwise
+MAX_RETRIES="${MAX_RETRIES:-3}"
+curl_retry() {
+    local attempt=1 rc
+    while (( attempt <= MAX_RETRIES )); do
+        curl -fsSL "$@" && return 0
+        rc=$?
+        if (( attempt < MAX_RETRIES )); then
+            log_warn "curl attempt $attempt/$MAX_RETRIES failed (exit $rc); retrying in $((attempt * 5))s..."
+            sleep $((attempt * 5))
+        fi
+        ((attempt++))
+    done
+    return "$rc"
+}
+
 # Install via APT (non-interactive, serialized — apt/dpkg lock is not parallel-safe)
 install_apt() {
     local pkg="$1"
@@ -134,7 +150,7 @@ install_gh_release() {
     local assets asset_url tmpdir
 
     log_info "Fetching latest release assets for $repo..."
-    assets=$(curl -fsSL "$api" | grep -o '"browser_download_url": *"[^"]*"' | cut -d'"' -f4) || {
+    assets=$(curl_retry "$api" | grep -o '"browser_download_url": *"[^"]*"' | cut -d'"' -f4) || {
         log_error "Could not list releases for $repo (rate limit?)"
         return 1
     }
@@ -149,7 +165,7 @@ install_gh_release() {
     log_info "Downloading ${asset_url##*/}..."
 
     tmpdir=$(mktemp -d)
-    curl -fsSL "$asset_url" -o "$tmpdir/asset" || { rm -rf "$tmpdir"; return 1; }
+    curl_retry "$asset_url" -o "$tmpdir/asset" || { rm -rf "$tmpdir"; return 1; }
 
     case "${asset_url##*.}" in
         zip) unzip -qo "$tmpdir/asset" -d "$tmpdir" ;;
@@ -180,11 +196,22 @@ install_script() {
     # shellcheck disable=SC2086
     # NOTE: do NOT redirect the shell's stdin — `-s` reads the installer script
     # from stdin, and </dev/null would feed it an empty script (curl error 23).
-    if curl -fsSL "$url" | "$shell" -s -- $args >"$logfile" 2>&1; then
-        rm -f "$logfile"
-        return 0
-    fi
-    log_error "Installer for $name failed; last lines:"
+    # Retry the whole pipeline: transient 502/503 from installer hosts must not
+    # fail the run (installers here are idempotent re-runs).
+    local attempt=1
+    while (( attempt <= MAX_RETRIES )); do
+        if curl -fsSL "$url" | "$shell" -s -- $args >"$logfile" 2>&1; then
+            rm -f "$logfile"
+            return 0
+        fi
+        log_warn "$name installer attempt $attempt/$MAX_RETRIES failed; last lines:"
+        tail -3 "$logfile" >&2
+        if (( attempt < MAX_RETRIES )); then
+            sleep $((attempt * 5))
+        fi
+        attempt=$((attempt + 1))
+    done
+    log_error "Installer for $name failed after $MAX_RETRIES attempts; last lines:"
     tail -5 "$logfile" >&2
     rm -f "$logfile"
     return 1
