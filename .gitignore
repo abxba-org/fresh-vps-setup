@@ -1,0 +1,54 @@
+# =============================================================================
+# fresh-VPS-setup .gitignore
+# =============================================================================
+
+# --- Secrets & credentials (NEVER commit these) ---
+# Cloudflare Tunnel credentials / origin certs
+*.pem
+*.key
+credentials*.json
+*tunnel*.json
+.env
+.env.*
+secrets/
+credentials/
+
+# Tailscale auth keys / tokens
+*auth-key*
+*.token
+
+# --- Kilo agent session artifacts (local planning, not project content) ---
+.kilo
+
+
+# --- OS junk ---
+.DS_Store
+Thumbs.db
+desktop.ini
+*~
+
+# --- Editor / IDE ---
+.vscode/
+.idea/
+.history/
+*.swp
+*.swo
+*.swn
+
+# --- Backup / temp artifacts (scripts generate these) ---
+*.bak
+*.orig
+*.rej
+*.tmp
+*.log
+backups/
+*-backup/
+
+# NOTE: real credentials live in /etc/cloudflared/ and /root/vps-hardening-backups/
+# on the server (outside this repo) — never copy them into the working tree.
+
+# --- Package manager / toolchain leftovers ---
+node_modules/
+__pycache__/
+.venv/
+venv/

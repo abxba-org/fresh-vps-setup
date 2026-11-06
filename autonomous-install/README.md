@@ -36,7 +36,7 @@ Runs without any prompts:
 | Step | Script | Description |
 |------|--------|-------------|
 | 1 | `../scripts/system-update/auto-system-update.sh` | Configures `unattended-upgrades` (preseeded via debconf) |
-| 2 | `../scripts/tools/install-sys-tools.sh` | Installs terminal tools: exa, fd, zoxide, bat, fzf, ripgrep, curl, Atuin |
+| 2 | `../scripts/tools/parallel-tools-installer.sh` | Installs 18 terminal tools in parallel: fd, zoxide, bat, fzf, ripgrep, curl, jq, htop, ncdu, fastfetch, cloudflared, eza, btop, duf, dust, atuin, starship, fnm |
 | 3 | `../scripts/tools/cloudflare/CF-setup.sh` | Adds Cloudflare APT repo, installs `cloudflared` |
 
 **Prerequisites:** Run as root (`sudo`). Internet access required.
@@ -82,7 +82,7 @@ All scripts are in the parent directory (`../scripts/`):
 │   ├── secure-vps.sh          # UFW, SSH hardening, fail2ban
 │   └── restrict-ssh.sh        # nftables SSH guard (apply/confirm/rollback)
 ├── tools/
-│   ├── install-sys-tools.sh   # Terminal tools + Atuin
+│   ├── parallel-tools-installer.sh   # 18 tools in parallel (replaces the removed install-sys-tools.sh)
 │   ├── cloudflare/
 │   │   └── CF-setup.sh        # Cloudflare APT repo + cloudflared
 │   └── tailscale/
@@ -95,7 +95,7 @@ All scripts are in the parent directory (`../scripts/`):
 
 | Tool | Location | Description |
 |------|----------|-------------|
-| Parallel Tools Installer | `../scripts/tools/parallel-tools-installer.sh` | Installs 17 tools in parallel (template-based) |
+| Parallel Tools Installer | `../scripts/tools/parallel-tools-installer.sh` | Installs 18 tools in parallel (template-based, tested 18/18 on Ubuntu 24.04) |
 | Zsh Setup Guide | `../scripts/zsh/README.md` | Full Zsh/Oh My Zsh/Powerlevel10k configuration |
 | Cloudflare Tunnels | `../scripts/tools/cloudflare/CF-tunnels.md` | Deep-dive on tunnel architecture |
 

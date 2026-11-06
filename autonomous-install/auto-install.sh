@@ -24,7 +24,7 @@ Usage: sudo ./auto-install.sh [--phase=1|2] [--skip-interactive]
 
 PHASE 1 (Autonomous) — runs non-interactively:
   1. auto-system-update.sh      (unattended-upgrades, preseeded)
-  2. install-sys-tools.sh       (terminal tools, Atuin)
+  2. parallel-tools-installer.sh (18 terminal tools, parallel + verified)
   3. CF-setup.sh                (cloudflared package)
 
 PHASE 2 (Interactive) — requires manual confirmation:
@@ -65,9 +65,9 @@ run_phase1() {
     "$SCRIPT_DIR/scripts/system-update/auto-system-update.sh"
     log "unattended-upgrades configured."
 
-    # Step 2: Terminal tools + Atuin
-    log "Step 2/3: Installing terminal tools (exa, fd, zoxide, bat, fzf, rg, Atuin)..."
-    "$SCRIPT_DIR/scripts/tools/install-sys-tools.sh"
+    # Step 2: Terminal tools (parallel, verified — replaces the removed install-sys-tools.sh)
+    log "Step 2/3: Installing terminal tools in parallel (fd, zoxide, bat, fzf, rg, fastfetch, eza, btop, atuin, starship, fnm, ...)..."
+    "$SCRIPT_DIR/scripts/tools/parallel-tools-installer.sh"
     log "Terminal tools installed."
 
     # Step 3: Cloudflare cloudflared

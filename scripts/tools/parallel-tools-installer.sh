@@ -46,7 +46,7 @@ done
 # --- Configuration ---
 declare -A TOOLS=(
     # Terminal utilities (via APT)
-    ["exa"]="apt:exa"
+    # NOTE: exa has no apt package on Ubuntu 24.04+ (deprecated upstream; use eza)
     ["fd"]="apt:fd-find"
     ["zoxide"]="apt:zoxide"
     ["bat"]="apt:bat"
@@ -56,26 +56,26 @@ declare -A TOOLS=(
     ["jq"]="apt:jq"
     ["htop"]="apt:htop"
     ["ncdu"]="apt:ncdu"
+    ["fastfetch"]="apt:fastfetch"
 
     # Modern replacements (via GitHub releases)
-    ["eza"]="gh: eza-community/eza"
-    ["btop"]="gh: aristocratos/btop"
-    ["duf"]="gh: muesli/duf"
-    ["dust"]="gh: bootandy/dust"
+    ["eza"]="gh:eza-community/eza"
+    ["btop"]="gh:aristocratos/btop"
+    ["duf"]="gh:muesli/duf"
+    ["dust"]="gh:bootandy/dust"
 
-    # Shell enhancements
+    # Shell enhancements (script:<url>|<args>|<shell> — shell defaults to sh)
     ["atuin"]="script:https://setup.atuin.sh"
-    ["starship"]="script:https://starship.rs/install.sh"
+    ["starship"]="script:https://starship.rs/install.sh|--yes|sh"
 
     # Cloudflare
     ["cloudflared"]="apt:cloudflared"  # Requires Cloudflare APT repo pre-configured
 
-    # Version managers
-    ["fnm"]="script:https://fnm.vercel.app/install"
+    # Version managers (fnm's installer is bash-only)
+    ["fnm"]="script:https://fnm.vercel.app/install|--skip-shell|bash"
 )
 
 declare -A BINARIES=(
-    ["exa"]="exa"
     ["fd"]="fd"
     ["zoxide"]="zoxide"
     ["bat"]="bat"
@@ -85,6 +85,7 @@ declare -A BINARIES=(
     ["jq"]="jq"
     ["htop"]="htop"
     ["ncdu"]="ncdu"
+    ["fastfetch"]="fastfetch"
     ["eza"]="eza"
     ["btop"]="btop"
     ["duf"]="duf"
@@ -107,56 +108,103 @@ log_success() { printf '\033[1;32m[OK]\033[0m %s\n' "$*"; }
 # --- Helpers ---
 has_command() { command -v "$1" >/dev/null 2>&1; }
 
-# Install via APT (non-interactive)
+# Install via APT (non-interactive, serialized — apt/dpkg lock is not parallel-safe)
 install_apt() {
     local pkg="$1"
-    if ! dpkg-query -W -f='${Status}' "$pkg" 2>/dev/null | grep -q 'install ok installed'; then
-        log_info "Installing $pkg via APT..."
-        DEBIAN_FRONTEND=noninteractive apt-get install -y "$pkg" >/dev/null
-    else
-        log_info "$pkg already installed, skipping."
-    fi
+    (
+      flock 9
+      if ! dpkg-query -W -f='${Status}' "$pkg" 2>/dev/null | grep -q 'install ok installed'; then
+          log_info "Installing $pkg via APT..."
+          DEBIAN_FRONTEND=noninteractive apt-get install -y "$pkg" >/dev/null
+      else
+          log_info "$pkg already installed, skipping."
+      fi
+      # Ubuntu/Debian binary name fixes
+      case "$pkg" in
+          fd-find) mkdir -p /usr/local/bin; ln -sf /usr/bin/fdfind /usr/local/bin/fd ;;
+          bat)     mkdir -p /usr/local/bin; ln -sf /usr/bin/batcat /usr/local/bin/bat ;;
+      esac
+    ) 9>/var/lib/dpkg/lock-frontend
 }
 
-# Install via GitHub release (binary)
+# Install via GitHub release (binary) — matches assets via the GitHub API
 install_gh_release() {
     local repo="$1" binary="$2"
-    local latest_url="https://api.github.com/repos/$repo/releases/latest"
-    local version download_url
+    local api="https://api.github.com/repos/$repo/releases/latest"
+    local assets asset_url tmpdir
 
-    log_info "Fetching latest release for $repo..."
-    version=$(curl -fsSL "$latest_url" | grep '"tag_name"' | head -1 | sed 's/.*"tag_name": "\([^"]*\)".*/\1/')
-    [[ -n $version ]] || { log_error "Failed to get version for $repo"; return 1; }
+    log_info "Fetching latest release assets for $repo..."
+    assets=$(curl -fsSL "$api" | grep -o '"browser_download_url": *"[^"]*"' | cut -d'"' -f4) || {
+        log_error "Could not list releases for $repo (rate limit?)"
+        return 1
+    }
 
-    # Try common naming patterns
-    for pattern in \
-        "${binary}_${version#v}_linux_amd64.tar.gz" \
-        "${binary}_${version}_linux_amd64.tar.gz" \
-        "${binary}-${version#v}-linux-amd64.tar.gz" \
-        "${binary}-${version}-linux-amd64.tar.gz"; do
-        download_url="https://github.com/$repo/releases/download/$version/$pattern"
-        if curl -fsSLI "$download_url" >/dev/null 2>&1; then
-            log_info "Downloading $pattern..."
-            curl -fsSL "$download_url" | tar -xz -C /usr/local/bin "$binary" 2>/dev/null || \
-                curl -fsSL "$download_url" | tar -xz -C /usr/local/bin --wildcards "*/$binary" --transform 's|.*/||' 2>/dev/null || true
-            [[ -x /usr/local/bin/$binary ]] && return 0
-        fi
-    done
-    log_error "No matching asset found for $repo $binary"
+    # Linux x86_64/amd64 assets only; exclude arm, 32-bit, non-Linux
+    asset_url=$(grep -Ei "$binary" <<<"$assets" \
+        | grep -Ei 'linux' \
+        | grep -Ei 'x86_64|amd64' \
+        | grep -Evi 'aarch64|armv|arm64|i[36]86|android|darwin|windows|freebsd' \
+        | head -1)
+    [[ -n $asset_url ]] || { log_error "No linux x86_64 asset found for $repo $binary"; return 1; }
+    log_info "Downloading ${asset_url##*/}..."
+
+    tmpdir=$(mktemp -d)
+    curl -fsSL "$asset_url" -o "$tmpdir/asset" || { rm -rf "$tmpdir"; return 1; }
+
+    case "${asset_url##*.}" in
+        zip) unzip -qo "$tmpdir/asset" -d "$tmpdir" ;;
+        *)   tar -xf "$tmpdir/asset" -C "$tmpdir" 2>/dev/null || tar -xf "$tmpdir/asset" -C "$tmpdir" --wildcards 2>/dev/null ;;
+    esac
+
+    local found
+    found=$(find "$tmpdir" -type f -name "$binary" -perm /111 | head -1)
+    if [[ -z $found ]]; then
+        found=$(find "$tmpdir" -type f -name "$binary" | head -1)
+    fi
+    if [[ -n $found ]]; then
+        install -m 0755 "$found" "/usr/local/bin/$binary"
+        rm -rf "$tmpdir"
+        return 0
+    fi
+    rm -rf "$tmpdir"
+    log_error "Binary '$binary' not found in $repo release archive"
     return 1
 }
 
-# Install via curl|bash script
+# Install via curl|<shell> script (starship requires sh; fnm requires bash)
 install_script() {
-    local url="$1" name="$2"
-    log_info "Running installer script for $name..."
-    curl -fsSL "$url" | bash -s -- -y 2>/dev/null || curl -fsSL "$url" | bash - 2>/dev/null
+    local url="$1" name="$2" args="$3" shell="${4:-sh}"
+    local logfile
+    logfile=$(mktemp)
+    log_info "Running installer script for $name ${args:+with args: $args}..."
+    # shellcheck disable=SC2086
+    # NOTE: do NOT redirect the shell's stdin — `-s` reads the installer script
+    # from stdin, and </dev/null would feed it an empty script (curl error 23).
+    if curl -fsSL "$url" | "$shell" -s -- $args >"$logfile" 2>&1; then
+        rm -f "$logfile"
+        return 0
+    fi
+    log_error "Installer for $name failed; last lines:"
+    tail -5 "$logfile" >&2
+    rm -f "$logfile"
+    return 1
 }
 
 # Generic installer dispatcher
 install_tool() {
-    local name="$1" spec="${TOOLS[$name]}" binary="${BINARIES[$name]}"
+    local name="$1"
+    local spec="${TOOLS[$name]}" binary="${BINARIES[$name]}"
     local type="${spec%%:*}" value="${spec#*:}"
+    local args="" shell="sh"
+
+    if [[ $type == script && $value == *\|* ]]; then
+        args="${value#*|}"
+        value="${value%%|*}"
+        if [[ $args == *\|* ]]; then
+            shell="${args#*|}"
+            args="${args%%|*}"
+        fi
+    fi
 
     if [[ "$NO_SHELL_MODIFY" == *"$name"* ]]; then
         log_info "Skipping shell modifications for $name (NO_SHELL_MODIFY)"
@@ -170,13 +218,33 @@ install_tool() {
             install_gh_release "$value" "$binary"
             ;;
         script)
-            install_script "$value" "$name"
+            install_script "$value" "$name" "$args" "$shell"
             ;;
         *)
             log_error "Unknown install type '$type' for $name"
             return 1
             ;;
     esac
+
+    # User-level installs (atuin, fnm, cargo tools) are not in root's PATH —
+    # symlink into /usr/local/bin so verification and shells find them.
+    if ! has_command "$binary"; then
+        local alt
+        for alt in \
+            "$HOME/.atuin/bin/$binary" \
+            "$HOME/.local/bin/$binary" \
+            "$HOME/.cargo/bin/$binary" \
+            "$HOME/.fnm/$binary" \
+            "$HOME/.fnm/bin/$binary" \
+            "$HOME/.local/share/fnm/$binary" \
+            "${XDG_DATA_HOME:-$HOME/.local/share}/fnm/$binary"; do
+            if [[ -x $alt ]]; then
+                ln -sf "$alt" "/usr/local/bin/$binary"
+                log_info "Symlinked $alt -> /usr/local/bin/$binary"
+                break
+            fi
+        done
+    fi
 }
 
 # --- List tools ---
@@ -196,9 +264,10 @@ verify_tools() {
     for tool in "${!TOOLS[@]}"; do
         binary="${BINARIES[$tool]}"
         if has_command "$binary"; then
-            local version=$("$binary" --version 2>&1 | head -1 || echo "version unknown")
+            local version
+            version=$("$binary" --version 2>&1 | head -1 || echo "version unknown")
             log_success "$binary: $version"
-            ((ok++))
+            ok=$((ok + 1))
         else
             log_error "$binary not found"
         fi
@@ -215,6 +284,12 @@ fi
 
 # --- Parallel Installation ---
 log_info "Installing ${#TOOLS[@]} tools in parallel (timeout: ${TIMEOUT}s each)..."
+
+# One-time package list refresh (serialized against the apt lock)
+(
+  flock 9
+  apt-get update -qq
+) 9>/var/lib/dpkg/lock-frontend
 
 declare -A PIDS
 FAILED=0

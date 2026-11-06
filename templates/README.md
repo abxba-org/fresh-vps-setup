@@ -6,7 +6,7 @@ Reusable script templates and patterns for AI-assisted development.
 
 | Template | Description | Use Case |
 |----------|-------------|----------|
-| [[tools-installer-template.md]] | Parallel, fault-tolerant CLI tool installer | Installing multiple tools with verification |
+| [[tools-installer-template.md]] | Parallel, fault-tolerant CLI tool installer | Installing multiple tools with verification — production implementation lives at `../scripts/tools/parallel-tools-installer.sh` (tested 18/18 on Ubuntu 24.04) |
 
 ## Template Guidelines
 

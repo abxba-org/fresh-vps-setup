@@ -15,17 +15,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Cloudflare Tunnels module with per-service isolation
 - Tailscale mesh networking module
 - Installer template for AI-assisted development
+- `scripts/tools/parallel-tools-installer.sh` — parallel, fault-tolerant installer (18 tools; tested end-to-end on Ubuntu 24.04, 18/18 verified)
+- `autonomous-install/` — two-phase provisioning orchestrator (`auto-install.sh`: Phase 1 autonomous, Phase 2 interactive)
 
 ### Changed
-- N/A
-
-### Deprecated
-- N/A
+- `neofetch` replaced by `fastfetch` (actively maintained fork)
+- `exa` dropped — no apt package on Ubuntu 24.04+, deprecated upstream; `eza` (GitHub release) covers it
+- `install-sys-tools.sh`'s tool set fully absorbed by `parallel-tools-installer.sh`, including Ubuntu binary-name symlinks (`fdfind`→`fd`, `batcat`→`bat`)
+- APT installs serialized via `flock` (parallel apt/dpkg runs are not lock-safe); one-time `apt-get update` before parallel phase
 
 ### Removed
-- N/A
+- `scripts/tools/install-sys-tools.sh` — superseded by `scripts/tools/parallel-tools-installer.sh`
+- `scripts/tools/tools.sh` — empty placeholder file
 
 ### Fixed
+- `parallel-tools-installer.sh`: `set -e` abort from `((ok++))` during verification; `set -u` unbound-variable abort in `local` declaration; GitHub-release asset matching now API-driven (eza/btop/duf/dust); `install_script` runs per-tool shell (`sh` for starship/atuin, `bash` for fnm) and no longer starves `sh -s` stdin; user-level installs (atuin, fnm) symlinked into `/usr/local/bin`
+
+### Deprecated
 - N/A
 
 ### Security

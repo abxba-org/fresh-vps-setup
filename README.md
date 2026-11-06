@@ -52,7 +52,7 @@ sudo ./scripts/network/restrict-ssh.sh apply
 # Test, then confirm:
 sudo ./scripts/network/restrict-ssh.sh confirm
 
-# Install terminal tools in parallel (exa, fd, zoxide, bat, fzf, rg, Atuin, starship, fnm, etc.)
+# Install terminal tools in parallel (fastfetch, fd, zoxide, bat, fzf, rg, eza, btop, atuin, starship, fnm, etc.)
 sudo ./scripts/tools/parallel-tools-installer.sh
 
 # Install and configure Zsh with Oh My Zsh, plugins, and theme
@@ -82,7 +82,7 @@ Orchestrates the full VPS setup in two phases:
 
 **Phase 1 (Autonomous)** — runs non-interactively:
 1. `scripts/system-update/auto-system-update.sh` — unattended-upgrades (preseeded)
-2. `scripts/tools/install-sys-tools.sh` — terminal tools + Atuin
+2. `scripts/tools/parallel-tools-installer.sh` — terminal tools in parallel (replaces the legacy `install-sys-tools.sh`)
 3. `scripts/tools/cloudflare/CF-setup.sh` — cloudflared package
 
 **Phase 2 (Interactive)** — requires manual confirmation:
@@ -109,7 +109,7 @@ sudo ./auto-install.sh --skip-interactive
 
 ### `scripts/tools/parallel-tools-installer.sh` — Parallel Tool Installer
 
-Based on [tools-installer-template.md](templates/tools-installer-template.md), installs 17 tools in parallel with failure detection and verification.
+Based on [tools-installer-template.md](templates/tools-installer-template.md), installs 18 tools in parallel with failure detection and verification. **Tested end-to-end: 18/18 tools verified on Ubuntu 24.04.** Fully replaces the legacy `install-sys-tools.sh`.
 
 ```bash
 # Install all tools (APT packages, GitHub releases, install scripts)
@@ -128,10 +128,16 @@ NO_SHELL_MODIFY="atuin starship" sudo ./scripts/tools/parallel-tools-installer.s
 ./scripts/tools/parallel-tools-installer.sh --list
 ```
 
-**Tools installed:**
-- **APT**: exa, fd, zoxide, bat, fzf, ripgrep, curl, jq, htop, ncdu, cloudflared
-- **GitHub releases**: eza, btop, duf, dust
-- **Install scripts**: atuin, starship, fnm
+**Tools installed (18):**
+- **APT** (serialized via `flock`): fd (`fd-find` + `fd` symlink), zoxide, bat (`batcat` symlink), fzf, ripgrep, curl, jq, htop, ncdu, fastfetch (replaces neofetch), cloudflared
+- **GitHub releases** (API-driven asset matching): eza, btop, duf, dust
+- **Install scripts** (per-tool `sh`/`bash` + args): atuin, starship, fnm
+
+**Implementation notes:**
+- `exa` is intentionally not installed — no apt package on Ubuntu 24.04+, deprecated upstream; `eza` covers it
+- Idempotent: safe to re-run (skips installed packages, verifies all binaries)
+- User-level installs (atuin, fnm) are symlinked into `/usr/local/bin` automatically
+- `neofetch` was replaced by `fastfetch` (actively maintained fork)
 
 > **Note:** `cloudflared` via APT requires Cloudflare repo pre-configured (run `CF-setup.sh` first).
 

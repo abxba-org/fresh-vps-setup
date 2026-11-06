@@ -44,23 +44,29 @@ sudo ./setup.sh
 | Google Cloud CLI | Google APT repo | `apt` | `gcloud --version` |
 | Azure CLI | Microsoft APT repo | `apt` | `az --version` |
 
-### Utilities
+### Utilities (installed by `parallel-tools-installer.sh`)
 
 | Tool | Version Source | Install Method | Verify Command |
 |------|----------------|----------------|----------------|
 | jq | Ubuntu main | `apt` | `jq --version` |
 | yq (v4) | GitHub releases | Binary | `yq --version` |
-| bat | GitHub releases | Binary | `bat --version` |
+| bat | Ubuntu main | `apt` (symlink `batcat` → `bat`) | `bat --version` |
 | eza | GitHub releases | Binary | `eza --version` |
 | ripgrep (rg) | Ubuntu main | `apt` | `rg --version` |
-| fd | Ubuntu main | `apt` | `fd --version` |
+| fd | Ubuntu main | `apt` (`fd-find` + symlink `fdfind` → `fd`) | `fd --version` |
 | htop | Ubuntu main | `apt` | `htop --version` |
 | btop | GitHub releases | Binary | `btop --version` |
 | ncdu | Ubuntu main | `apt` | `ncdu --version` |
 | dust | GitHub releases | Binary | `dust --version` |
 | duf | GitHub releases | Binary | `duf --version` |
-| fzf | GitHub releases | Binary | `fzf --version` |
-| zoxide | GitHub releases | Binary | `zoxide --version` |
+| fzf | Ubuntu main | `apt` | `fzf --version` |
+| zoxide | Ubuntu main | `apt` | `zoxide --version` |
+| fastfetch | Ubuntu main | `apt` | `fastfetch --version` |
+| atuin | setup.atuin.sh | Install script (`sh`) | `atuin --version` |
+| starship | starship.rs | Install script (`sh --yes`) | `starship --version` |
+| fnm | fnm.vercel.app | Install script (`bash --skip-shell`) | `fnm --version` |
+
+> `exa` is not installed: no apt package on Ubuntu 24.04+ and deprecated upstream — `eza` replaces it. `neofetch` was replaced by `fastfetch`.
 
 ### Version Managers
 
@@ -80,11 +86,22 @@ sudo ./setup.sh
 
 ### Parallel Installation Pattern
 
-Based on [[templates/tools-installer-template.md]], tools are installed in parallel with:
-- Background process tracking
-- Failure detection and aggregation
-- Post-install verification
-- Configurable timeout (default 300s)
+Implemented in `parallel-tools-installer.sh`, based on [[templates/tools-installer-template.md]]. Tools are installed in parallel with:
+- Background process tracking (PID associative array)
+- Failure detection and aggregation (one failure does not abort others)
+- Post-install verification (`command -v` + version reporting)
+- Configurable timeout (default 300s, via `TIMEOUT`)
+- Three install methods per tool: `apt:` (serialized via `flock` on the dpkg lock), `gh:` (GitHub API asset matching, `tar -xf` auto-detect), `script:` (`sh`/`bash` per tool, with args)
+- Ubuntu binary-name symlinks (`fdfind` → `fd`, `batcat` → `bat`)
+- User-level installs (atuin, fnm) symlinked into `/usr/local/bin`
+
+Status: **tested end-to-end on Ubuntu 24.04 — 18/18 tools verified.** This replaces the legacy `install-sys-tools.sh` (sequential, 9 tools, no verification).
+
+```bash
+sudo ./parallel-tools-installer.sh              # install all
+sudo ./parallel-tools-installer.sh --verify-only # verify only
+./parallel-tools-installer.sh --list             # list configured tools
+```
 
 ### Idempotency
 
