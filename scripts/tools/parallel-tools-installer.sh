@@ -131,7 +131,7 @@ install_apt() {
       flock 9
       if ! dpkg-query -W -f='${Status}' "$pkg" 2>/dev/null | grep -q 'install ok installed'; then
           log_info "Installing $pkg via APT..."
-          DEBIAN_FRONTEND=noninteractive apt-get install -y "$pkg" >/dev/null
+          DEBIAN_FRONTEND=noninteractive apt-get install -y "$pkg"
       else
           log_info "$pkg already installed, skipping."
       fi
@@ -200,9 +200,16 @@ install_script() {
     # fail the run (installers here are idempotent re-runs).
     local attempt=1
     while (( attempt <= MAX_RETRIES )); do
-        if curl -fsSL "$url" | "$shell" -s -- $args >"$logfile" 2>&1; then
-            rm -f "$logfile"
-            return 0
+        if [[ -n $args ]]; then
+            if curl -fsSL "$url" | "$shell" -s -- $args >"$logfile" 2>&1; then
+                rm -f "$logfile"
+                return 0
+            fi
+        else
+            if curl -fsSL "$url" | "$shell" -s >"$logfile" 2>&1; then
+                rm -f "$logfile"
+                return 0
+            fi
         fi
         log_warn "$name installer attempt $attempt/$MAX_RETRIES failed; last lines:"
         tail -3 "$logfile" >&2
@@ -266,8 +273,11 @@ install_tool() {
             "$HOME/.local/share/fnm/$binary" \
             "${XDG_DATA_HOME:-$HOME/.local/share}/fnm/$binary"; do
             if [[ -x $alt ]]; then
-                ln -sf "$alt" "/usr/local/bin/$binary"
-                log_info "Symlinked $alt -> /usr/local/bin/$binary"
+                # Only symlink if target doesn't exist or points elsewhere
+                if [[ ! -e /usr/local/bin/$binary ]] || [[ $(readlink -f /usr/local/bin/$binary) != "$alt" ]]; then
+                    ln -sf "$alt" "/usr/local/bin/$binary"
+                    log_info "Symlinked $alt -> /usr/local/bin/$binary"
+                fi
                 break
             fi
         done

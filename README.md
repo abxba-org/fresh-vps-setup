@@ -25,16 +25,20 @@ fresh-VPS-setup/
 git clone <repo-url> fresh-VPS-setup
 cd fresh-VPS-setup
 
+# Make all scripts executable (one-time)
+chmod +x make-executable.sh
+./make-executable.sh
+
 # Phase 1: Fully automatic (unattended-upgrades, terminal tools, cloudflared)
-sudo ./auto-install.sh --phase=1
+sudo ./autonomous-install/auto-install.sh --phase=1
 
 # Phase 2: Interactive (UFW, SSH hardening, nftables guard, Tailscale, Zsh)
-sudo ./auto-install.sh --phase=2
+sudo ./autonomous-install/auto-install.sh --phase=2
 ```
 
 Or run both phases with prompts:
 ```bash
-sudo ./auto-install.sh
+sudo ./autonomous-install/auto-install.sh
 ```
 
 ### Manual Step-by-Step
@@ -82,8 +86,8 @@ Orchestrates the full VPS setup in two phases:
 
 **Phase 1 (Autonomous)** — runs non-interactively:
 1. `scripts/system-update/auto-system-update.sh` — unattended-upgrades (preseeded)
-2. `scripts/tools/parallel-tools-installer.sh` — terminal tools in parallel (replaces the legacy `install-sys-tools.sh`)
-3. `scripts/tools/cloudflare/CF-setup.sh` — cloudflared package
+2. `scripts/tools/cloudflare/CF-setup.sh` — Cloudflare APT repo + cloudflared package
+3. `scripts/tools/parallel-tools-installer.sh` — terminal tools in parallel (replaces the legacy `install-sys-tools.sh`)
 
 **Phase 2 (Interactive)** — requires manual confirmation:
 4. `scripts/network/secure-vps.sh --apply --harden-ssh` — UFW, SSH hardening, fail2ban
@@ -93,16 +97,16 @@ Orchestrates the full VPS setup in two phases:
 
 ```bash
 # Run both phases (prompts before Phase 2)
-sudo ./auto-install.sh
+sudo ./autonomous-install/auto-install.sh
 
 # Phase 1 only
-sudo ./auto-install.sh --phase=1
+sudo ./autonomous-install/auto-install.sh --phase=1
 
 # Phase 2 only (after Phase 1 completes)
-sudo ./auto-install.sh --phase=2
+sudo ./autonomous-install/auto-install.sh --phase=2
 
 # Skip interactive entirely
-sudo ./auto-install.sh --skip-interactive
+sudo ./autonomous-install/auto-install.sh --skip-interactive
 ```
 
 > **Important:** For Phase 2 step 5 (restrict-ssh.sh), you MUST be connected via Cloudflare Access SSH or Tailscale SSH. Direct-IP sessions will be terminated. Keep provider console/rescue access ready.

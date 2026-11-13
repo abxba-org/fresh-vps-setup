@@ -9,7 +9,7 @@
 # =============================================================================
 set -Eeuo pipefail
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 PHASE=0
 SKIP_INTERACTIVE=0
 
@@ -30,8 +30,8 @@ PHASE 1 (Autonomous) — runs non-interactively:
 PHASE 2 (Interactive) — requires manual confirmation:
   4. secure-vps.sh --apply      (UFW, SSH hardening, fail2ban)
   5. restrict-ssh.sh apply      (nftables SSH guard)
-  6. tailscale-setup.sh         (Tailscale join, tagged)
-  7. zsh setup                  (manual steps)
+  6. Tailscale setup (SKIPPED - run manually if needed)
+  7. Zsh setup                  (manual steps)
 
 Options:
   --phase=1             Run only Phase 1 (autonomous)
@@ -61,19 +61,20 @@ run_phase1() {
     # Step 1: Automatic security updates (preseeded)
     log "Step 1/3: Configuring unattended-upgrades..."
     export DEBIAN_FRONTEND=noninteractive
+    export AUTO_INSTALL_NONINTERACTIVE=1
     echo 'unattended-upgrades unattended-upgrades/enable_auto_updates boolean true' | debconf-set-selections
     "$SCRIPT_DIR/scripts/system-update/auto-system-update.sh"
     log "unattended-upgrades configured."
 
-    # Step 2: Terminal tools (parallel, verified — replaces the removed install-sys-tools.sh)
-    log "Step 2/3: Installing terminal tools in parallel (fd, zoxide, bat, fzf, rg, fastfetch, eza, btop, atuin, starship, fnm, ...)..."
+    # Step 2: Cloudflare cloudflared repo (MUST run before parallel tools — cloudflared is an APT package)
+    log "Step 2/3: Installing cloudflared from Cloudflare APT repo..."
+    "$SCRIPT_DIR/scripts/tools/cloudflare/CF-setup.sh"
+    log "cloudflared repo configured."
+
+    # Step 3: Terminal tools (parallel, verified — includes cloudflared APT install)
+    log "Step 3/3: Installing terminal tools in parallel (fd, zoxide, bat, fzf, rg, fastfetch, eza, btop, atuin, starship, fnm, ...)..."
     "$SCRIPT_DIR/scripts/tools/parallel-tools-installer.sh"
     log "Terminal tools installed."
-
-    # Step 3: Cloudflare cloudflared
-    log "Step 3/3: Installing cloudflared from Cloudflare APT repo..."
-    "$SCRIPT_DIR/scripts/tools/cloudflare/CF-setup.sh"
-    log "cloudflared installed."
 
     log "========== PHASE 1 COMPLETE =========="
     log "Next steps (manual):"
@@ -91,7 +92,7 @@ run_phase2() {
     read -rp "Press Enter to continue to Phase 2, or Ctrl+C to abort... "
 
     # Step 4: secure-vps.sh --apply
-    log "Step 4/7: Running secure-vps.sh --apply (UFW, SSH hardening, fail2ban)..."
+    log "Step 4/6: Running secure-vps.sh --apply (UFW, SSH hardening, fail2ban)..."
     warn "Prompts you will see:"
     warn "  1. 'CONSOLE-READY' — confirm provider console/rescue access"
     warn "  2. SSH port + additional ports (e.g., 80/tcp,443/tcp)"
@@ -103,7 +104,7 @@ run_phase2() {
     log "secure-vps.sh --apply completed."
 
     # Step 5: restrict-ssh.sh apply
-    log "Step 5/7: Running restrict-ssh.sh apply (nftables SSH guard)..."
+    log "Step 5/6: Running restrict-ssh.sh apply (nftables SSH guard)..."
     warn "REQUIREMENT: You must be connected via Cloudflare Access SSH or Tailscale SSH."
     warn "Direct-IP SSH sessions WILL BE TERMINATED."
     warn "After apply, you have 5 MINUTES to test and run 'sudo ./restrict-ssh.sh confirm'."
@@ -113,19 +114,12 @@ run_phase2() {
     warn "TEST NOW: Open a new SSH session via Cloudflare Access or Tailscale."
     warn "Then run: sudo ./restrict-ssh.sh confirm"
 
-    # Step 6: tailscale-setup.sh
-    log "Step 6/7: Running tailscale-setup.sh (join tailnet with tag)..."
-    warn "This prints an auth URL. You must:"
-    warn "  1. Open the URL from an authenticated device"
-    warn "  2. Approve the node in Tailscale admin console"
-    warn "  3. Disable key expiry (admin console -> machine -> ... -> Disable key expiry)"
-    warn "  4. Verify 'tailscale ping' and Tailscale SSH from your laptop"
-    read -rp "Press Enter to continue... "
-    "$SCRIPT_DIR/scripts/tools/tailscale/tailscale-setup.sh"
-    log "tailscale-setup.sh completed. Complete admin console steps above."
+    # Step 6: Tailscale setup (SKIPPED - already done)
+    log "Step 6/6: Skipping tailscale-setup.sh (already completed)."
+    log "If you need to re-run: sudo ./scripts/tools/tailscale/tailscale-setup.sh"
 
     # Step 7: Zsh setup
-    log "Step 7/7: Zsh setup (manual steps)..."
+    log "Step 6/6: Zsh setup (manual steps)..."
     cat <<'ZSH_EOF'
 
 Zsh setup requires manual steps (scripts/zsh/zsh_script.sh is notes only):
@@ -160,7 +154,6 @@ ZSH_EOF
     log "Remaining manual follow-ups:"
     log "  - cloudflared: 'cloudflared tunnel login' then create tunnels"
     log "  - restrict-ssh.sh: 'sudo ./restrict-ssh.sh confirm' after testing"
-    log "  - tailscale: approve node + disable key expiry in admin console"
     log "  - zsh: follow steps above"
 }
 

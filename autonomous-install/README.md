@@ -36,8 +36,8 @@ Runs without any prompts:
 | Step | Script | Description |
 |------|--------|-------------|
 | 1 | `../scripts/system-update/auto-system-update.sh` | Configures `unattended-upgrades` (preseeded via debconf) |
-| 2 | `../scripts/tools/parallel-tools-installer.sh` | Installs 18 terminal tools in parallel: fd, zoxide, bat, fzf, ripgrep, curl, jq, htop, ncdu, fastfetch, cloudflared, eza, btop, duf, dust, atuin, starship, fnm |
-| 3 | `../scripts/tools/cloudflare/CF-setup.sh` | Adds Cloudflare APT repo, installs `cloudflared` |
+| 2 | `../scripts/tools/cloudflare/CF-setup.sh` | Adds Cloudflare APT repo, installs `cloudflared` |
+| 3 | `../scripts/tools/parallel-tools-installer.sh` | Installs 18 terminal tools in parallel: fd, zoxide, bat, fzf, ripgrep, curl, jq, htop, ncdu, fastfetch, cloudflared, eza, btop, duf, dust, atuin, starship, fnm |
 
 **Prerequisites:** Run as root (`sudo`). Internet access required.
 
